@@ -20,8 +20,18 @@ say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo"; exit 1; }
 command -v caddy >/dev/null || { echo "caddy not found on this droplet"; exit 1; }
-[ -f "$SRC/index.html" ] || { echo "index.html missing next to install.sh"; exit 1; }
-[ -f "$SRC/og.png" ]     || { echo "og.png missing next to install.sh"; exit 1; }
+RAW=https://raw.githubusercontent.com/ermworld1/ingate-site/main
+ASSETS="$SRC"
+if [ ! -f "$SRC/index.html" ] || [ ! -f "$SRC/og.png" ]; then
+  ASSETS="$(mktemp -d)"
+  echo "fetching site files into $ASSETS"
+  for f in index.html og.png; do
+    curl -fsSL -o "$ASSETS/$f" "$RAW/$f" || { echo "could not fetch $f"; exit 1; }
+  done
+fi
+# a truncated download must not reach the webroot
+[ "$(stat -c%s "$ASSETS/index.html")" -gt 100000 ] || { echo "index.html looks truncated"; exit 1; }
+[ "$(stat -c%s "$ASSETS/og.png")"     -gt 20000  ] || { echo "og.png looks truncated"; exit 1; }
 
 say "Service account and directories"
 id -u ingate >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin ingate
@@ -29,8 +39,8 @@ install -d -m 755 "$WEBROOT" /opt/ingate /etc/caddy/sites /var/log/caddy /etc/in
 install -d -m 700 -o ingate -g ingate /var/lib/ingate
 
 say "Site files"
-install -m 644 "$SRC/index.html" "$WEBROOT/index.html"
-install -m 644 "$SRC/og.png"     "$WEBROOT/og.png"
+install -m 644 "$ASSETS/index.html" "$WEBROOT/index.html"
+install -m 644 "$ASSETS/og.png"     "$WEBROOT/og.png"
 chown -R caddy:caddy "$WEBROOT" 2>/dev/null || true
 echo "    index.html $(stat -c%s "$WEBROOT/index.html") bytes, og.png $(stat -c%s "$WEBROOT/og.png") bytes"
 
